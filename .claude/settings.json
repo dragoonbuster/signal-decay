@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node test/run.js)",
+      "Bash(node test/run.js *)",
+      "Bash(node test/serve.js)",
+      "Bash(node test/serve.js *)",
+      "Bash(node --check *)",
+      "PowerShell(node test\\run.js)",
+      "PowerShell(node test\\run.js *)",
+      "PowerShell(node test/run.js)",
+      "PowerShell(node test/run.js *)",
+      "PowerShell(node test\\serve.js)",
+      "PowerShell(node test\\serve.js *)",
+      "PowerShell(node test/serve.js)",
+      "PowerShell(node test/serve.js *)",
+      "PowerShell(node --check *)",
+      "PowerShell(git status *)",
+      "PowerShell(git log *)",
+      "PowerShell(git diff *)",
+      "PowerShell(git show *)",
+      "PowerShell(git branch *)",
+      "PowerShell(git remote *)",
+      "PowerShell(git rev-parse *)",
+      "PowerShell(git hash-object *)",
+      "PowerShell(git grep *)",
+      "PowerShell(Get-Content *)",
+      "PowerShell(Test-Path *)",
+      "PowerShell(Resolve-DnsName *)",
+      "PowerShell(gh auth status)"
+    ]
+  }
+}
