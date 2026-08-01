@@ -294,12 +294,14 @@
         <button class="btn" data-d="ngt">NIGHTMARE</button>
       </div>
       <div id="diffDesc" style="font-size:10.5px;color:var(--dim);line-height:1.5;min-height:44px;margin-bottom:14px"></div>
-      <div class="sub" style="margin-bottom:6px" title="Ridges block sensor line-of-sight to low-flying drones — radar shadows are attack corridors">AREA OF OPERATIONS</div>
+      <div class="sub" style="margin-bottom:6px" title="Ridges wall off sensor lines; mesas are buildable high ground with a look-down blind ring; forests conceal drones over them; water denies footing. High flyers ignore all of it.">AREA OF OPERATIONS</div>
       <div class="ovrow" id="terRow" style="margin-bottom:20px">
         <button class="btn on" data-t="0">OPEN</button>
         <button class="btn" data-t="1">RIDGE LINE</button>
-        <button class="btn" data-t="2">THE PASS</button>
-        <button class="btn" data-t="3">BADLANDS</button>
+        <button class="btn" data-t="2">MESA VERDE</button>
+        <button class="btn" data-t="3">CANYON</button>
+        <button class="btn" data-t="4">LAKELAND</button>
+        <button class="btn" data-t="5">BLACKWOOD</button>
         <button class="btn" data-t="-1">RANDOM</button>
       </div>
       <div class="ovrow" style="margin-bottom:24px"><button class="btn primary" id="btnStart" style="font-size:17px;padding:12px 26px;flex:1">▶ ASSUME COMMAND</button></div>
@@ -346,8 +348,8 @@
       </div>
       </div>
       <div id="tabTheater" style="display:none">
-      <p style="margin-bottom:14px">Three FOBs hold the northern front — open ground at CENTER, a mountain
-      pass NORTH, ridgelines SOUTH. Intel gives odds on the enemy's main effort each
+      <p style="margin-bottom:14px">Three FOBs hold the northern front — a box canyon at NORTH, mesa country
+      at CENTER, ridgelines SOUTH. Intel gives odds on the enemy's main effort each
       rotation; funds are shared, and systems transfer between bases by convoy for a
       15% fee, arriving as crates. If any FOB falls, the front collapses. Hold all
       three through nine rotations.</p>
@@ -528,8 +530,14 @@
       <div class="hlp"><b>NOTHING SHOOTS WHAT NOTHING SEES</b>
         Weapons only engage confirmed tracks. The FOB senses ~260m on its own;
         SENTINEL radar and ORACLE optics extend the picture. Fuzzy diamonds are
-        unconfirmed contacts — get a sensor on them. RIDGES block line-of-sight
-        to low flyers: radar shadows are attack corridors.</div>
+        unconfirmed contacts — get a sensor on them.</div>
+      <div class="hlp"><b>THE GROUND FIGHTS TOO</b>
+        RIDGES wall off sensor lines to low flyers. MESAS are buildable high
+        ground: sensors up top see over everything, but carry a 90m look-down
+        blind ring — and low-ground sensors cannot track drones crossing above
+        mesa height at all. FORESTS conceal drones over them (dense forest
+        badly, and it takes no towers). WATER just says no. High-altitude
+        craft ignore all of it.</div>
       <div class="hlp"><b>THE POWER GRID</b>
         The FOB supplies 8 power and every system draws some. GENERATORS add +5.
         Nothing runs unpowered.</div>
@@ -1167,7 +1175,7 @@ function makeTower(k, x, y) {
     mode: (k === 'sam' ? 'strong' : 'near'), sw: rand(0, TAU), aim: rand(0, TAU),
     stock: TT[k].cap || 0, rb: 0, dry: 0, fx: 0, buffMulOn: 1, sndT: 0,
     offlineT: 0, rofMul: 1, prio: null, prioForced: null, override: false, optic: false, opticMul: 1, emcon: false,
-    struct: (k === 'gen' ? 3 : 0), powered: true,
+    struct: (k === 'gen' ? 3 : 0), powered: true, gnd: groundAt(x, y),
     cs: CSNAMES[k] + '-' + (csCount[k] = (csCount[k] || 0) + 1) };
   applyStats(t);
   return t;
@@ -1569,15 +1577,15 @@ function updEnemies(dt) {
     // SENSOR FUSION — a weapon can only engage a confirmed track:
     //   FOB organic sensors (stealth seen at 55%), search radar (stealth burn-through
     //   at 55% of radar range), or EO/IR optic (sees stealth at full range).
-    const overTer = e.alt === 'hi'; // high flyers are seen over ridges
-    let conf = dist(e, BASE) < BASE.sense * (e.stealth ? 0.55 : 1) * env.sense &&
-      (overTer || !losBlocked(BASE.x, BASE.y, e.x, e.y));
+    const conceal = e.alt === 'hi' ? 1 : senseFactorAt(e.x, e.y); // forest cover where the drone is
+    let conf = dist(e, BASE) < BASE.sense * (e.stealth ? 0.55 : 1) * env.sense * conceal &&
+      !losDenied(BASE.x, BASE.y, 0, e);
     if (!conf) for (const t of towers) {
       if (t.offlineT > 0 || t.emcon || !t.powered) continue;
       if (t.kind !== 'radar' && t.kind !== 'optic') continue;
-      if (!overTer && losBlocked(t.x, t.y, e.x, e.y)) continue;
-      if (t.kind === 'radar' && dist(t, e) < t.range * (e.stealth ? 0.55 : 1)) { conf = true; break; }
-      if (t.kind === 'optic' && dist(t, e) < t.range * env.optic) { conf = true; break; }
+      if (losDenied(t.x, t.y, t.gnd || 0, e)) continue;
+      if (t.kind === 'radar' && dist(t, e) < t.range * (e.stealth ? 0.55 : 1) * conceal) { conf = true; break; }
+      if (t.kind === 'optic' && dist(t, e) < t.range * env.optic * conceal) { conf = true; break; }
     }
     if (conf) {
       if (e.revealT <= 0 && state === 'combat' && !waveTypesLogged.has(e.type)) {
@@ -2477,32 +2485,92 @@ function drawAuras() {
   }
 }
 
-/* ---------- terrain: ridges mask low-altitude tracks ----------
-   A ridge blocks sensor line-of-sight (FOB organic, radar, optic) to any
-   LOW-altitude drone behind it — radar shadows are attack corridors, and
-   the counterplay is pushing a sensor into the shadow. High-altitude
-   craft are seen over ridges. Towers cannot be built on ridges. Weapons
-   fire on any confirmed datalinked track (only sensing is masked). */
+/* ---------- terrain: elevation, cover and water ----------
+   One crisp rule per feature, composing into RTS-grade depth:
+   - RIDGE (cliff wall): blocks all low-altitude sensor LOS; never buildable.
+   - MESA (high ground): BUILDABLE. Sensors on top see over mesas and
+     plains alike, but have a 90m look-down blind ring against lower
+     targets, and low-ground sensors cannot track drones crossing above
+     mesa height at all — plateaus are contested sensor real estate.
+   - FOREST (sparse): drones over it are concealed (-25% effective sensor
+     range, all sensors). Buildable.
+   - DENSE forest: heavy concealment (-55%) and no footing.
+   - WATER: no footing, nothing else.
+   High-altitude drones ignore all of it. Weapons fire on any confirmed
+   datalinked track — terrain masks sensing only. */
 const TERRAINS = [
-  { name: 'OPEN', ridges: [] },
-  { name: 'RIDGE LINE', ridges: [
-    { x1: 300, y1: 175, x2: 620, y2: 115, r: 30 },
-    { x1: 280, y1: 545, x2: 640, y2: 605, r: 30 },
+  { name: 'OPEN', feats: [] },
+  { name: 'RIDGE LINE', feats: [
+    { k: 'ridge', x1: 300, y1: 175, x2: 620, y2: 115, r: 30 },
+    { k: 'ridge', x1: 280, y1: 545, x2: 640, y2: 605, r: 30 },
   ] },
-  { name: 'THE PASS', ridges: [
-    { x1: 420, y1: 290, x2: 700, y2: 430, r: 36 },
-    { x1: 880, y1: 150, x2: 990, y2: 215, r: 26 },
+  { name: 'MESA VERDE', feats: [
+    { k: 'mesa', x1: 430, y1: 200, x2: 560, y2: 180, r: 80 },
+    { k: 'mesa', x1: 420, y1: 520, x2: 520, y2: 545, r: 70 },
+    { k: 'forest', x1: 640, y1: 330, x2: 760, y2: 400, r: 70 },
+    { k: 'water', x1: 950, y1: 570, x2: 1040, y2: 590, r: 48 },
   ] },
-  { name: 'BADLANDS', ridges: [
-    { x1: 240, y1: 360, x2: 420, y2: 250, r: 28 },
-    { x1: 520, y1: 480, x2: 760, y2: 520, r: 26 },
-    { x1: 620, y1: 140, x2: 830, y2: 190, r: 26 },
+  { name: 'THE CANYON', feats: [
+    { k: 'ridge', x1: 240, y1: 300, x2: 720, y2: 285, r: 26 },
+    { k: 'ridge', x1: 240, y1: 430, x2: 720, y2: 445, r: 26 },
+    { k: 'dense', x1: 150, y1: 360, x2: 230, y2: 365, r: 55 },
+    { k: 'mesa', x1: 600, y1: 545, x2: 720, y2: 560, r: 65 },
+  ] },
+  { name: 'LAKELAND', feats: [
+    { k: 'water', x1: 520, y1: 330, x2: 680, y2: 390, r: 90 },
+    { k: 'water', x1: 330, y1: 130, x2: 430, y2: 150, r: 55 },
+    { k: 'water', x1: 380, y1: 590, x2: 500, y2: 570, r: 55 },
+    { k: 'forest', x1: 800, y1: 200, x2: 880, y2: 240, r: 60 },
+    { k: 'forest', x1: 760, y1: 500, x2: 850, y2: 470, r: 55 },
+  ] },
+  { name: 'BLACKWOOD', feats: [
+    { k: 'dense', x1: 420, y1: 180, x2: 560, y2: 230, r: 70 },
+    { k: 'dense', x1: 450, y1: 420, x2: 600, y2: 470, r: 75 },
+    { k: 'forest', x1: 300, y1: 320, x2: 430, y2: 330, r: 65 },
+    { k: 'forest', x1: 660, y1: 300, x2: 760, y2: 340, r: 70 },
+    { k: 'mesa', x1: 780, y1: 150, x2: 870, y2: 170, r: 60 },
   ] },
 ];
 let terId = 0, TER = [];
 function setTerrain(id) {
   terId = clamp(id | 0, 0, TERRAINS.length - 1);
-  TER = TERRAINS[terId].ridges;
+  TER = TERRAINS[terId].feats;
+}
+function groundAt(x, y) { // 1 = mesa top, 0 = plains
+  for (const f of TER)
+    if (f.k === 'mesa' && ptSegD2(x, y, f.x1, f.y1, f.x2, f.y2) < f.r * f.r) return 1;
+  return 0;
+}
+function senseFactorAt(x, y) { // concealment where the DRONE is
+  let m = 1;
+  for (const f of TER) {
+    if (f.k !== 'forest' && f.k !== 'dense') continue;
+    if (ptSegD2(x, y, f.x1, f.y1, f.x2, f.y2) < f.r * f.r) m = Math.min(m, f.k === 'dense' ? 0.45 : 0.75);
+  }
+  return m;
+}
+function badFooting(x, y) { // returns the blocking kind, or null if buildable
+  for (const f of TER) {
+    if (f.k !== 'ridge' && f.k !== 'water' && f.k !== 'dense') continue;
+    const pad = f.k === 'ridge' ? 14 : 8;
+    if (ptSegD2(x, y, f.x1, f.y1, f.x2, f.y2) < (f.r + pad) * (f.r + pad)) return f.k;
+  }
+  return null;
+}
+function losDenied(sx, sy, sg, e) { // can sensor at (sx,sy,ground sg) track drone e?
+  if (e.alt === 'hi') return false; // above all of it
+  const eg = groundAt(e.x, e.y);
+  if (sg < eg) return true; // nothing sees up the cliffs
+  if (sg > eg && Math.hypot(sx - e.x, sy - e.y) < 90) return true; // look-down blind ring
+  for (const f of TER) {
+    if (f.k === 'ridge') {
+      if (segSegD2(sx, sy, e.x, e.y, f.x1, f.y1, f.x2, f.y2) < f.r * f.r) return true;
+    } else if (f.k === 'mesa') {
+      if (sg >= 1 || eg >= 1) continue; // elevation sees across other mesas
+      if (segSegD2(sx, sy, e.x, e.y, f.x1, f.y1, f.x2, f.y2) < f.r * f.r) return true;
+    }
+  }
+  return false;
 }
 function ptSegD2(px, py, x1, y1, x2, y2) {
   const dx = x2 - x1, dy = y2 - y1;
@@ -2522,17 +2590,6 @@ function segSegD2(ax, ay, bx, by, cx, cy, dx, dy) {
     ptSegD2(ax, ay, cx, cy, dx, dy), ptSegD2(bx, by, cx, cy, dx, dy),
     ptSegD2(cx, cy, ax, ay, bx, by), ptSegD2(dx, dy, ax, ay, bx, by));
 }
-function losBlocked(x1, y1, x2, y2) {
-  for (const rg of TER)
-    if (segSegD2(x1, y1, x2, y2, rg.x1, rg.y1, rg.x2, rg.y2) < rg.r * rg.r) return true;
-  return false;
-}
-function onRidge(x, y, pad) {
-  for (const rg of TER)
-    if (ptSegD2(x, y, rg.x1, rg.y1, rg.x2, rg.y2) < (rg.r + (pad || 0)) * (rg.r + (pad || 0))) return true;
-  return false;
-}
-
 function snapXY(x, y) { // grid lock: placement snaps to the 40px map grid
   if (!settings.snap) return { x, y };
   return { x: clamp(Math.round(x / 40) * 40, 40, W - 40), y: clamp(Math.round(y / 40) * 40, 40, H - 40) };
@@ -2540,11 +2597,67 @@ function snapXY(x, y) { // grid lock: placement snaps to the 40px map grid
 function validPlace(x, y, ignore) { // ignore: the tower being moved vacates its own spot
   if (x < 24 || x > W - 24 || y < 24 || y > H - 24) return false;
   if (Math.hypot(x - BASE.x, y - BASE.y) < BASE.r + 38) return false;
-  if (onRidge(x, y, 14)) return false;
+  if (badFooting(x, y)) return false;
   for (const t of towers) if (t !== ignore && Math.hypot(x - t.x, y - t.y) < 34) return false;
   return true;
 }
 
+function featCapsule(f, pad) {
+  ctx.lineCap = 'round';
+  ctx.lineWidth = (f.r + (pad || 0)) * 2;
+  ctx.beginPath(); ctx.moveTo(f.x1, f.y1); ctx.lineTo(f.x2, f.y2); ctx.stroke();
+  ctx.lineCap = 'butt';
+}
+function featPts(f, n) { // deterministic scatter inside the capsule (no RNG state)
+  if (f._pts && f._pts.length === n) return f._pts;
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const h = s => { const v = Math.sin(i * s + f.x1 + f.y2) * 43758.5453; return v - Math.floor(v); };
+    const t = h(127.1), ang = h(311.7) * TAU, rad = Math.sqrt(h(74.7)) * (f.r - 7);
+    pts.push([f.x1 + (f.x2 - f.x1) * t + Math.cos(ang) * rad, f.y1 + (f.y2 - f.y1) * t + Math.sin(ang) * rad]);
+  }
+  f._pts = pts;
+  return pts;
+}
+function drawFeat(f) {
+  const mid = [(f.x1 + f.x2) / 2, (f.y1 + f.y2) / 2];
+  ctx.font = '8px IBM Plex Mono'; ctx.textAlign = 'center';
+  if (f.k === 'water') {
+    ctx.strokeStyle = '#0b1c22'; featCapsule(f);
+    ctx.strokeStyle = 'rgba(95,180,216,0.10)'; featCapsule(f, -8);
+    ctx.strokeStyle = 'rgba(95,180,216,0.35)'; ctx.lineWidth = 1; ctx.setLineDash([7, 9]);
+    for (const p of featPts(f, 7)) { ctx.beginPath(); ctx.moveTo(p[0] - 6, p[1]); ctx.lineTo(p[0] + 6, p[1]); ctx.stroke(); }
+    ctx.setLineDash([]);
+  } else if (f.k === 'forest' || f.k === 'dense') {
+    const dense = f.k === 'dense';
+    ctx.strokeStyle = dense ? 'rgba(14,34,18,0.85)' : 'rgba(24,46,26,0.55)'; featCapsule(f);
+    ctx.fillStyle = dense ? 'rgba(80,160,95,0.5)' : 'rgba(95,170,105,0.4)';
+    for (const p of featPts(f, dense ? 34 : 20)) {
+      ctx.beginPath(); ctx.moveTo(p[0], p[1] - 3.4); ctx.lineTo(p[0] + 2.8, p[1] + 2.2); ctx.lineTo(p[0] - 2.8, p[1] + 2.2);
+      ctx.closePath(); ctx.fill();
+    }
+    if (dense) {
+      ctx.fillStyle = 'rgba(140,200,150,0.4)';
+      ctx.fillText('DENSE', mid[0], mid[1] + 3);
+    }
+  } else if (f.k === 'mesa') {
+    ctx.strokeStyle = '#232a1e'; featCapsule(f, 4); // cliff shadow
+    ctx.strokeStyle = 'rgba(122,108,72,0.45)'; featCapsule(f);
+    ctx.strokeStyle = 'rgba(60,54,36,0.9)'; featCapsule(f, -3); // inner tone
+    ctx.strokeStyle = 'rgba(215,200,160,0.30)'; ctx.lineWidth = 1.5; ctx.setLineDash([9, 6]); // rim
+    for (const p of featPts(f, 10)) { ctx.beginPath(); ctx.moveTo(p[0] - 4, p[1]); ctx.lineTo(p[0] + 4, p[1] - 2); ctx.stroke(); }
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(215,200,160,0.45)';
+    ctx.fillText('MESA — HIGH GROUND', mid[0], mid[1] + 3);
+  } else { // ridge
+    ctx.strokeStyle = '#141d16'; featCapsule(f);
+    ctx.strokeStyle = 'rgba(118,102,70,0.30)'; featCapsule(f, -5);
+    ctx.strokeStyle = 'rgba(205,195,155,0.28)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(f.x1, f.y1); ctx.lineTo(f.x2, f.y2); ctx.stroke();
+    ctx.fillStyle = 'rgba(205,195,155,0.35)';
+    ctx.fillText('RIDGE', mid[0], mid[1] + 3);
+  }
+}
 function render() {
   ctx.save();
   if (shake > 0 && settings.shake) ctx.translate(rand(-1, 1) * shake * 6, rand(-1, 1) * shake * 6);
@@ -2553,19 +2666,7 @@ function render() {
     ctx.drawImage(bgCv2, -sc, 0);
     ctx.drawImage(bgCv2, W - sc, 0);
   } else ctx.drawImage(bg, 0, 0);
-  // ridges (terrain varies per run — drawn over the static background)
-  for (const rg of TER) {
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = '#141d16'; ctx.lineWidth = rg.r * 2;
-    ctx.beginPath(); ctx.moveTo(rg.x1, rg.y1); ctx.lineTo(rg.x2, rg.y2); ctx.stroke();
-    ctx.strokeStyle = 'rgba(118,102,70,0.30)'; ctx.lineWidth = Math.max(4, rg.r * 2 - 10);
-    ctx.beginPath(); ctx.moveTo(rg.x1, rg.y1); ctx.lineTo(rg.x2, rg.y2); ctx.stroke();
-    ctx.strokeStyle = 'rgba(205,195,155,0.28)'; ctx.lineWidth = 2; // crest
-    ctx.beginPath(); ctx.moveTo(rg.x1, rg.y1); ctx.lineTo(rg.x2, rg.y2); ctx.stroke();
-    ctx.lineCap = 'butt';
-    ctx.fillStyle = 'rgba(205,195,155,0.35)'; ctx.font = '8px IBM Plex Mono'; ctx.textAlign = 'center';
-    ctx.fillText('RIDGE', (rg.x1 + rg.x2) / 2, (rg.y1 + rg.y2) / 2 + 3);
-  }
+  for (const f of TER) drawFeat(f); // terrain varies per run — drawn over the static background
   drawAuras();
   if (convoy) drawTrain(); else drawBase();
   // shadows (confirmed tracks only; high-altitude craft cast small, distant shadows)
@@ -2681,6 +2782,9 @@ function render() {
     ctx.beginPath(); ctx.arc(g.x, g.y, 15, 0, TAU); ctx.stroke();
     ctx.fillStyle = col + '0.9)'; ctx.font = 'bold 11px IBM Plex Mono'; ctx.textAlign = 'center';
     let label = d.name + ' ' + fmt$(d.cost) + (d.draw ? ' ⚡' + d.draw : ' +' + d.pwr + '⚡');
+    if (groundAt(g.x, g.y) === 1) label += ' · HIGH GROUND';
+    const foot = badFooting(g.x, g.y);
+    if (foot) label = 'NO FOOTING — ' + (foot === 'dense' ? 'DENSE FOREST' : foot.toUpperCase());
     if (noPwr) label = 'INSUFFICIENT POWER — BUILD GENERATOR';
     if (noCov) label = 'OUTSIDE GRID COVERAGE — EXTEND WITH A GENERATOR';
     if (placing === 'gen' && DIFFS[diffKey].fieldPwr) {
@@ -3476,6 +3580,7 @@ function moveTower(t, x, y) { // build-phase only today; recorded anyway for fut
   cash -= c;
   addSpend(t.k, c);
   t.x = x; t.y = y;
+  t.gnd = groundAt(x, y);
   t.tg = null; t.lastTg = null;
   _pwr = '';
   addText(x, y - 24, 'REDEPLOYED -$' + c, '#5fd8ff');
@@ -3630,6 +3735,8 @@ const TIPS = [
   'Weather is a sensor problem: <b>RAIN and FOG</b> choke EO/IR and lasers, <b>NIGHT</b> shortens the FOB\'s organic sensing — radar does not care. Check CONDITIONS in the intel strip.',
   'Night raids favor the attacker. When the next wave is <b>NIGHT</b>, lean on SENTINEL radar coverage over ORACLE optics.',
   '<b>Ridges block sensor line-of-sight</b> to low-flying drones — a radar shadow is an attack corridor. Push a picket sensor INTO the shadow, or let your guns cover the exit.',
+  '<b>MESAS are buildable high ground.</b> A radar up top sees over everything — but it has a 90m blind ring against lower targets, and nothing on low ground can track drones crossing above. Take the high ground or concede it.',
+  '<b>Forests conceal.</b> Drones over sparse woods cut your effective sensor range 25%; dense forest cuts it 55% and takes no towers. Watch the treeline.',
 ];
 let tipIdx = 0;
 setInterval(() => {
@@ -4650,9 +4757,9 @@ function fastForwardRaid() { // ESC during rewatch: run the deterministic sim ou
    codes or replays in theater (too much state) — runs are one sitting. */
 let theater = null, placingCrate = null;
 const FOB_DEFS = [
-  { name: 'NORTH', ter: 2 },
-  { name: 'CENTER', ter: 0 },
-  { name: 'SOUTH', ter: 1 },
+  { name: 'NORTH', ter: 3 },   // the canyon
+  { name: 'CENTER', ter: 2 },  // mesa verde
+  { name: 'SOUTH', ter: 1 },   // ridge line
 ];
 const THEATER_TEMPLATES = [2, 4, 5, 6, 8, 9, 11, 12, 14]; // WAVES index per rotation
 const XFER_FEE = t => Math.max(10, Math.round(t.invested * 0.15 / 5) * 5);

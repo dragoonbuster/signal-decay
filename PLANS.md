@@ -17,11 +17,18 @@ Living document. Update as plans evolve (project rule: keep track of plans).
    pasted SD1 checkpoint code). Offense X-RATE scoring, REWATCH,
    RE-DESIGN. Headless suite: node test/run.js (45 checks).
 4. PARTIAL (2026-07-19) — Terrain, Theater and Convoy shipped as v1:
-   - TERRAIN: ridge capsules block sensor LOS to low-altitude drones
-     (radar shadows = attack corridors; hi-alt seen over ridges; no
-     placement on ridges; weapons unaffected - only sensing). Four AOs
-     (OPEN / RIDGE LINE / THE PASS / BADLANDS) + RANDOM on the DEFEND
-     tab; terrain id appended to SD1 codes (old codes read OPEN).
+   - TERRAIN v2 (2026-07-19, RTS-grade): one rule per feature kind.
+     RIDGE: walls off all low-alt sensor LOS, no footing. MESA:
+     BUILDABLE high ground - sensors on top see over everything but
+     carry a 90m look-down blind ring vs lower targets, and low-ground
+     sensors cannot track drones crossing above mesa height (plateaus
+     are contested sensor real estate). FOREST: -25% effective sensor
+     range vs drones over it (all sensors). DENSE: -55% and no footing.
+     WATER: no footing only. Hi-alt drones ignore everything; weapons
+     fire on any confirmed track (terrain masks sensing only). Six AOs:
+     OPEN / RIDGE LINE / MESA VERDE / THE CANYON / LAKELAND / BLACKWOOD
+     + RANDOM; 3-bit codec field holds up to 8 layouts (old codes read
+     OPEN). Tuning knobs: blind ring 90, conceal 0.75/0.45.
    - THEATER (unlocked by winning any skirmish; sd_prog localStorage):
      three FOBs (NORTH=The Pass, CENTER=Open, SOUTH=Ridge Line), one
      $420 wallet, intel odds per rotation with a hidden weighted target,

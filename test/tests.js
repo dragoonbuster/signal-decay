@@ -379,21 +379,42 @@ function lzwDecode(bytes) {
   AC = _ac; soundOn = _s;
 }
 
-/* terrain */
+/* terrain: elevation, cover, water */
 {
-  setTerrain(1); // RIDGE LINE: ridge from (300,175) to (620,115) r30
-  T(losBlocked(460, 40, 460, 260) === true, 'ridge blocks LOS through it');
-  T(losBlocked(100, 650, 1200, 650) === false, 'clear LOS away from ridges');
-  T(onRidge(460, 145, 0) === true && onRidge(460, 300, 0) === false, 'onRidge point test');
-  T(validPlace(460, 145) === false && validPlace(460, 320) === true, 'no towers on ridges');
-  diffKey = 'std'; menuTer = 2; restartGame();
-  T(terId === 2, 'restart applies the selected AO');
+  setTerrain(1); // RIDGE LINE (unchanged geometry)
+  T(losDenied(460, 40, 0, { x: 460, y: 260, alt: 'lo' }) === true, 'ridge walls off low LOS');
+  T(losDenied(460, 40, 0, { x: 460, y: 260, alt: 'hi' }) === false, 'high flyers seen over ridges');
+  T(losDenied(100, 650, 0, { x: 1200, y: 650, alt: 'lo' }) === false, 'clear LOS away from features');
+  T(badFooting(460, 145) === 'ridge' && badFooting(460, 320) === null, 'ridge denies footing');
+  T(validPlace(460, 145) === false && validPlace(460, 320) === true, 'validPlace honors footing');
+
+  setTerrain(2); // MESA VERDE
+  const mx = 495, my = 190; // on the north mesa
+  T(groundAt(mx, my) === 1 && groundAt(1128, 360) === 0, 'mesas are high ground');
+  T(validPlace(mx, my) === true, 'mesas are buildable');
+  T(losDenied(1100, 360, 0, { x: mx, y: my, alt: 'lo' }) === true, 'low ground cannot see up the mesa');
+  T(losDenied(mx, my, 1, { x: 495, y: 440, alt: 'lo' }) === false, 'mesa sensor sees far below');
+  T(losDenied(mx, my, 1, { x: 495, y: 275, alt: 'lo' }) === true, 'look-down blind ring under the rim');
+  placeTower('radar', mx, my);
+  T(towers[towers.length - 1].gnd === 1, 'towers cache their ground level');
+  towers = [];
+
+  setTerrain(4); // LAKELAND
+  T(badFooting(600, 360) === 'water' && validPlace(600, 360) === false, 'no building on water');
+
+  setTerrain(5); // BLACKWOOD
+  T(senseFactorAt(490, 205) === 0.45 && validPlace(490, 205) === false, 'dense forest conceals heavily, no footing');
+  T(senseFactorAt(365, 325) === 0.75 && validPlace(365, 325) === true, 'sparse forest conceals, buildable');
+  T(senseFactorAt(1128, 360) === 1, 'open ground has no concealment');
+
+  diffKey = 'std'; menuTer = 5; restartGame();
+  T(terId === 5, 'restart applies the selected AO');
   placeTower('vulcan', 900, 300);
   const code = encodeSave();
   menuTer = 0; restartGame();
   T(terId === 0, 'AO resets');
   applySave(decodeSave(code));
-  T(terId === 2, 'terrain survives the checkpoint codec');
+  T(terId === 5, 'terrain survives the checkpoint codec');
   menuTer = 0; restartGame();
 }
 
